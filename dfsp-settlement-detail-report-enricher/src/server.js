@@ -62,7 +62,7 @@ app.post('/upload', upload.single('csvFile'), async (req, res) => {
     res.json({
       success: true,
       message: 'CSV processed successfully',
-      downloadUrl: `/output/${outputFilename}`,
+      downloadUrl: `output/${outputFilename}`,
       stats: result
     });
   } catch (error) {
