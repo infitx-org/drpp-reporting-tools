@@ -375,8 +375,12 @@
             const formData = new FormData();
             formData.append('csvFile', selectedFile);
 
+            const basePath = window.location.pathname.endsWith('/')
+                ? window.location.pathname
+                : window.location.pathname + '/';
+
             try {
-                const response = await fetch('upload', {
+                const response = await fetch(`${basePath}upload`, {
                     method: 'POST',
                     body: formData
                 });
@@ -400,7 +404,7 @@
                 showStats(result.stats);
 
                 // Show download button
-                downloadUrl = result.downloadUrl;
+                downloadUrl = `${basePath}${result.downloadUrl}`;
                 downloadBtn.onclick = () => window.location.href = downloadUrl;
                 downloadSection.style.display = 'block';
 
