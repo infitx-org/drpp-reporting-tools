@@ -1,0 +1,111 @@
+name: Docker Build and Publish
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  # Change this to your GitHub organization/username
+  IMAGE_PREFIX: ${{ github.repository_owner }}
+
+jobs:
+  # Detect which services have changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      dfsp-settlement-detail-report-enricher: ${{ steps.filter.outputs.dfsp-settlement-detail-report-enricher }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            dfsp-settlement-detail-report-enricher:
+              - 'dfsp-settlement-detail-report-enricher/**'
+              - '.github/workflows/docker-publish.yml'
+
+  # Build and push dfsp-settlement-detail-report-enricher
+  build-dfsp-settlement-enricher:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.dfsp-settlement-detail-report-enricher == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/dfsp-settlement-detail-report-enricher
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dfsp-settlement-detail-report-enricher
+          file: ./dfsp-settlement-detail-report-enricher/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/dfsp-settlement-detail-report-enricher:${{ steps.meta.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Summary job
+  build-summary:
+    needs: [detect-changes, build-dfsp-settlement-enricher]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Changed | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| dfsp-settlement-detail-report-enricher | ${{ needs.detect-changes.outputs.dfsp-settlement-detail-report-enricher }} | ${{ needs.build-dfsp-settlement-enricher.result }} |" >> $GITHUB_STEP_SUMMARY
